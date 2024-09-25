@@ -1,0 +1,17 @@
+{
+	"name": "fw",
+	"version": "1.0.0",
+	"main": "index.js",
+	"type": "module",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "",
+	"license": "MIT",
+	"description": "",
+	"dependencies": {
+		"@sie-js/fw": "^1.0.13",
+		"iconv-lite": "^0.6.3",
+		"sprintf-js": "^1.1.3"
+	}
+}
