@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { compareUpdaters, compareBFB95EG, isFFSArchive } from './utils.js';
+import { compareBFB95EG, isFFSArchive } from './utils.js';
 
 /*
 console.log(compareUpdaters(

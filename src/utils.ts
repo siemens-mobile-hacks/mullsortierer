@@ -2,7 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import child_process from 'node:child_process';
-import { convertXbiToFlash, detectExeType, extractFromExe, extractUpdaterFromExe, getXbiExtension, isXbi, parseXbi, XbiInfo } from '@sie-js/fw';
+import {
+	convertXbiToFlash,
+	detectExeType,
+	extractFromExe,
+	extractUpdaterFromExe,
+	getXbiExtension,
+	isXbi,
+	parseXbi,
+	XbiInfo
+} from '@sie-js/fw';
 import { sprintf } from 'sprintf-js';
 
 export type XADEntry = {
@@ -46,11 +55,8 @@ export class RecoverableError extends Error {
 }
 
 export function isUserSwup(xbi: XbiInfo): boolean {
-	if (xbi.databaseName == 'projects' || xbi.baseline == 'PV_bin2swp_V0.0' || xbi.baselineRelease == 'PapuaSoft_and_PapuaHard')
-		return true;
-	if (xbi.flashSize && xbi.flashSize > 2 * 1024 * 1024 && xbi.size < 1024 * 1024)
-		return true;
-	return false;
+	return xbi.databaseName == 'projects' || xbi.baseline == 'PV_bin2swp_V0.0' || xbi.baselineRelease == 'PapuaSoft_and_PapuaHard';
+
 }
 
 export async function isFFSArchive(blobPath: string): Promise<[isFFS: boolean, shouldWarn: boolean]> {
@@ -79,7 +85,7 @@ export async function getVersionFromZIP(tmpFile: string): Promise<string | undef
 		}
 	}
 	return undefined;
-};
+}
 
 export function normalizeModel(model: string): string {
 	return model.toUpperCase()
@@ -346,7 +352,7 @@ export function parseByName(name: string): ParsedName | undefined {
 	name = path.basename(name).replace(/_2D/g, '-');
 
 	let m: RegExpMatchArray | null;
-	if ((m = name.match(/^([a-z0-9]+)_(\d+)_([\w\d_-]+)_(\d+)_(\d+)\.zip/i))) {
+	if ((m = name.match(/^([a-z0-9]+)_(\d+)_([\w_-]+)_(\d+)_(\d+)\.zip/i))) {
 		return {
 			category: "ffs",
 			model: normalizeModel(m[1]),
@@ -364,7 +370,7 @@ export function parseByName(name: string): ParsedName | undefined {
 				].join("_") + ".zip";
 			}
 		};
-	} else if ((m = name.match(/FFSInit_([a-z0-9]+)_(\d+)_([\w\d_-]+)_(\d+)_(\d+)\.exe$/i))) {
+	} else if ((m = name.match(/FFSInit_([a-z0-9]+)_(\d+)_([\w_-]+)_(\d+)_(\d+)\.exe$/i))) {
 		return {
 			category: "ffs",
 			model: normalizeModel(m[1]),
@@ -383,7 +389,7 @@ export function parseByName(name: string): ParsedName | undefined {
 				].join("_") + ".exe";
 			}
 		};
-	} else if ((m = name.match(/^(?:MobileMap_)?([a-z0-9]+)_(\d+)_([\w\d_-]+)_(\d+)_(\d+)(?:\s*\(\d+\))?(\.map|\.map\.txt|_map\.txt|\.txt|\.exe|\.map\.exe)$/i))) {
+	} else if ((m = name.match(/^(?:MobileMap_)?([a-z0-9]+)_(\d+)_([\w_-]+)_(\d+)_(\d+)(?:\s*\(\d+\))?(\.map|\.map\.txt|_map\.txt|\.txt|\.exe|\.map\.exe)$/i))) {
 		if (/^([0-9_]+)\.txt$/i.test(name))
 			return undefined;
 
@@ -434,7 +440,7 @@ export function parseByName(name: string): ParsedName | undefined {
 				return this.name!;
 			}
 		};
-	} else if ((m = name.match(/^([a-z0-9]+)_(\d+)_([\w\d_-]+)_(\d+)_(\d+)(?:_(sig))?(?:\s*\(\d+\))?\.xfs$/i))) {
+	} else if ((m = name.match(/^([a-z0-9]+)_(\d+)_([\w_-]+)_(\d+)_(\d+)(?:_(sig))?(?:\s*\(\d+\))?\.xfs$/i))) {
 		return {
 			category: "ffs",
 			model: normalizeModel(m[1]),

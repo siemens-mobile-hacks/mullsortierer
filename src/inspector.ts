@@ -1,5 +1,13 @@
 import fs from 'node:fs';
-import { calcMD5, extractFileFromArchive, getFilesFromArchive, RecoverableError, readFiles, XADEntry } from './utils.js';
+import {
+	calcMD5,
+	extractFileFromArchive,
+	getFilesFromArchive,
+	readFiles,
+	RecoverableError, XADArchive,
+	XADEntry
+} from './utils.js';
+import { cacheGetBuffer, cacheGetFile, cacheGetJson, cacheIsEnabled } from "./cache.js";
 
 // Archive passwords:
 // "handy-faq.de"
@@ -9,14 +17,14 @@ export interface FileIo {
 	getData(file: string): Promise<Buffer>;
 	getPath(file: string): Promise<string>;
 	release(file: string): Promise<void>;
-};
+}
 
 export type OnFwFoundCallback = (file: string, fileIo: FileIo, backtrace: string[], siblingFiles: string[]) => Promise<void>;
 
 export async function inspectFiles(files: string[], fileIo: FileIo, onFwFound: OnFwFoundCallback, backtrace: string[]) {
 	let promises: Promise<void>[] = [];
 	for (const file of files) {
-		const worker = async () => {
+		const worker = async (file: string) => {
 			try {
 				await onFwFound(file, fileIo, [...backtrace], files);
 			} catch (e) {
@@ -32,7 +40,7 @@ export async function inspectFiles(files: string[], fileIo: FileIo, onFwFound: O
 			}
 			await fileIo.release(file);
 		};
-		promises.push(worker());
+		promises.push(worker(file));
 
 		if (promises.length >= 48) {
 			await Promise.all(promises);
@@ -65,7 +73,9 @@ export async function inspectFilesInFS(dir: string, onFwFound: OnFwFoundCallback
 
 export async function inspectFilesInArchive(archiveName: string, archiveFile: string, onFwFound: OnFwFoundCallback, backtrace: string[] = []) {
 	const id = [...backtrace, archiveName].join('/');
-	const archive = await getFilesFromArchive(archiveFile);
+	const archive = await cacheGetJson<XADArchive>(id, async () => {
+		return await getFilesFromArchive(archiveFile);
+	});
 
 	if (archive.lsarProperties.XADIsEncrypted) {
 		console.error(`${id}: Password protected archive!`);
@@ -85,16 +95,32 @@ export async function inspectFilesInArchive(archiveName: string, archiveFile: st
 		files.push(entry.XADFileName);
 	}
 
+	const getDataFromArchive = async (file: string) => {
+		const buffer = await extractFileFromArchive(archiveFile, fileToEntry[file].XADIndex);
+		if (fileToEntry[file].XADFileSize != buffer.length)
+			throw new RecoverableError(`File corrupted after extraction from archive.`);
+		return buffer;
+	};
+
 	const fileIo: FileIo = {
 		async getData(file) {
-			if (!(file in fileToBuffer)) {
-				fileToBuffer[file] = await extractFileFromArchive(archiveFile, fileToEntry[file].XADIndex);
-				if (fileToEntry[file].XADFileSize != fileToBuffer[file].length)
-					throw new RecoverableError(`File corrupted after extraction from archive.`);
+			if (cacheIsEnabled()) {
+				return cacheGetBuffer(`${id}/${file}`, async () => {
+					return await getDataFromArchive(file);
+				});
 			}
+
+			if (!(file in fileToBuffer))
+				fileToBuffer[file] = await getDataFromArchive(file);
 			return fileToBuffer[file];
 		},
 		async getPath(file) {
+			if (cacheIsEnabled()) {
+				return cacheGetFile(`${id}/${file}`, async () => {
+					return await getDataFromArchive(file);
+				});
+			}
+
 			if (!fileToTempPath[file]) {
 				const blob = await fileIo.getData(file);
 				fileToTempPath[file] = `/tmp/sie-fw-finder-${Date.now()}-${calcMD5([archiveFile, file].join(':'))}.temp`;
@@ -103,6 +129,9 @@ export async function inspectFilesInArchive(archiveName: string, archiveFile: st
 			return fileToTempPath[file];
 		},
 		async release(file) {
+			if (cacheIsEnabled())
+				return;
+
 			if (fileToTempPath[file])
 				fs.unlinkSync(fileToTempPath[file]);
 			delete fileToBuffer[file];

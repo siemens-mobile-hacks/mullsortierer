@@ -1,25 +1,38 @@
-import "./console-colors.js";
+import "./consoleColorsHook.js";
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseArgs } from "node:util";
 import {
 	calcMD5,
-	parseByName, detectContentType,
-    normalizeModel,
-    isSEA,
-    compareUpdaters,
-    compareMaps,
-    compareXbis,
-    isFFSArchive,
-    isUserSwup,
-    getVersionFromZIP,
-    isMSDOS,
-    compareBFB95EG,
-    isBFB95EGValid,
-    RecoverableError
+	compareBFB95EG,
+	compareMaps,
+	compareUpdaters,
+	compareXbis,
+	detectContentType,
+	getVersionFromZIP,
+	isBFB95EGValid,
+	isFFSArchive,
+	isMSDOS,
+	isSEA,
+	isUserSwup,
+	normalizeModel,
+	parseByName,
+	RecoverableError
 } from './utils.js';
-import { convertXbiToFlash, detectExeType, detectServiceExeFormatVersion, extractFromExe, getVersionFromFFS, getXbiExtension, isXbi, parseXbi, XbiInfo } from '@sie-js/fw';
+import {
+	convertXbiToFlash,
+	detectExeType,
+	detectServiceExeFormatVersion,
+	extractFromExe,
+	getVersionFromFFS,
+	getXbiExtension,
+	isXbi,
+	parseXbi,
+	XbiInfo
+} from '@sie-js/fw';
 import { sprintf } from 'sprintf-js';
 import { FileIo, inspectFilesInArchive, inspectFilesInFS } from './inspector.js';
+import { cacheInit } from "./cache.js";
 
 type ModelRoutingQuirks = {
 	type: string;
@@ -107,12 +120,58 @@ const KNOWN_SHIT_FILES = [
 	/^(_\d+_)?NoDelta\.map$/i,
 ];
 
-const FW_IN_DIR = "/home/azq2/Downloads/s";
-const FW_OUT_DIR = `/media/azq2/backup/fw`;
+// Default paths
+//const DEFAULT_FW_IN_DIR = "/home/azq2/Downloads/s";
+//const DEFAULT_FW_OUT_DIR = `/media/azq2/backup/fw`;
+//const DEFAULT_FW_CACHE_DIR = `/home/azq2/fw-cache`;
+
+const { values } = parseArgs({
+	options: {
+		'in-dir': {
+			type: 'string',
+			short: 'i',
+			help: 'Input directory'
+		},
+		'out-dir': {
+			type: 'string',
+			short: 'o',
+			help: 'Output directory'
+		},
+		'cache-dir': {
+			type: 'string',
+			short: 'c',
+			default: '',
+			help: 'Cache directory'
+		},
+		'help': {
+			type: 'boolean',
+			short: 'h',
+			default: false,
+			help: 'Show this help message'
+		}
+	}
+});
+
+if (!values["in-dir"] || !values["out-dir"] || values["help"]) {
+	console.error(`usage: findAllSw.ts --in-dir /path/to/unsorted/fw --out-dir /path/to/sorted/fs`);
+	process.exit(0);
+}
+
+const FW_CACHE_DIR = values["cache-dir"] ? path.resolve(values["cache-dir"]!) : undefined;
+const FW_IN_DIR = path.resolve(values["in-dir"]!);
+const FW_OUT_DIR = path.resolve(values["out-dir"]!);
+
+console.log(`Input directory: ${FW_IN_DIR}`);
+console.log(`Output directory: ${FW_OUT_DIR}`);
+console.log(`Cache directory: ${FW_CACHE_DIR}`);
+
+if (FW_CACHE_DIR)
+	cacheInit(FW_CACHE_DIR);
 
 const allFilesTree: string[] = [];
 const savedFilesTree: Record<string, string> = {};
 await inspectFilesInFS(FW_IN_DIR, onFwFound);
+
 fs.writeFileSync("all_files.json", JSON.stringify(allFilesTree));
 fs.writeFileSync("saved_files.json", JSON.stringify(savedFilesTree));
 
@@ -369,11 +428,15 @@ function findSiblingDLL(file: string, siblingFiles: string[]): string[] {
 
 function getNameFromXBI(xbi: XbiInfo, dir: string): string {
 	const model = normalizeModel(xbi.model!);
-	if (xbi.langpack != null && xbi.t9 != null) {
+	if (xbi.langpack != null && xbi.langpack != "N/A" && xbi.t9 != null) {
 		const lgpId = +xbi.langpack.replace(/^[a-z_-]+/i, '');
+		if (isNaN(lgpId))
+			throw new Error(`Invalid langpack version: ${xbi.langpack}`);
 		return `${model}/${xbi.svn}/${dir}/${model}_${sprintf("%02d%02d%02d", xbi.svn, lgpId, xbi.t9)}`;
-	} else if (xbi.langpack != null) {
+	} else if (xbi.langpack != null && xbi.langpack != "N/A") {
 		const lgpId = +xbi.langpack.replace(/^[a-z_-]+/i, '');
+		if (isNaN(lgpId))
+			throw new Error(`Invalid langpack version: ${xbi.langpack}`);
 		return `${model}/${xbi.svn}/${dir}/${model}_${sprintf("%02d%02d", xbi.svn, lgpId)}`;
 	} else {
 		return `${model}/${xbi.svn}/${dir}/${model}_${sprintf("%02d", xbi.svn)}`;
@@ -391,12 +454,12 @@ function saveFwFile(fileName: string, buffer: Buffer, originalFile: string[]): v
 
 	const oldFilePath = isFileExists(fullPath);
 	if (oldFilePath) {
-		const oldBuffer = fs.readFileSync(oldFilePath);
+		const oldMD5 = calcMD5(fs.readFileSync(oldFilePath));
 		const newMD5 = calcMD5(buffer);
-		const oldMD5 = calcMD5(oldBuffer);
 		if (newMD5 === oldMD5)
 			return;
 
+		const oldBuffer = fs.readFileSync(oldFilePath);
 		if (path.basename(fileName).toLowerCase() == "bfb95eg.dll") {
 			const newBuffer = compareBFB95EG(oldBuffer, buffer);
 			if (newBuffer != null) {
